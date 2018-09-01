@@ -10,6 +10,9 @@ A simple implementation and abstraction onto the Windows API for functions varyi
 - SetLastError a.b.: `set_last_error(error_code)`
 - SetPhysicalCursorPos a.b.: `set_physical_cursor_pos(x, y)`
 - GetPhysicalCursorPos a.b.: `get_physical_cursor_pos(point**)`
+- GetStdHandle a.b.: `get_std_handle(std_handle)`
+- WriteConsole{A/W} a.b.: `write_console(handle, data)`
+- SetConsoleTitle a.b.: `set_console_title(name)`
 
 \* => 'aliased by'
 
