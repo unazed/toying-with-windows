@@ -11,6 +11,7 @@ A simple implementation and abstraction onto the Windows API for functions varyi
 - GetPhysicalCursorPos a.b.: `get_physical_cursor_pos(point\*\*)`
 
 \* => 'aliased by'
+
 \*\* => `point` is a `ctypes.pointer` to an instantiated `POINT` structure (defined in the file)
 
 The general format of the functions only specifies a `_ctypes_configuration` customization parameter which allows for run-time customization of compile-time set variables, for instance in the `messagebox` function; for further simplicity the `hWnd` parameter is not specified by the caller; it is within the pseudo-dictionary `_ctypes_configuration`. A call-parameter is defined as the following format: `(<param-name>, (<ctypes-type>, <true-if-python-passed-param-else-this-is-used>))`.
