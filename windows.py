@@ -60,10 +60,9 @@ class POINT(ctypes.Structure):
             ("x", ctypes.c_long),
             ("y", ctypes.c_long)
             ]
-
 def import_winapi_function(namespace, name, argtypes, restype, is_unicode=UNICODE):
     name += "W" if is_unicode else "A"
-    qual_fn_name = f"{namespace}.{name}"
+    qual_fn_name = f"{namespace._name}.{name}"
     if qual_fn_name in function_cache:
         return function_cache[qual_fn_name]
     try:
@@ -100,7 +99,7 @@ def ctypes_configuration_param_select(ctypes_configuration, idx):
 ##   ...
 ## )
 
-def display_messagebox(caption, body, type_input=0x00,
+def messagebox(caption, body, type_input=0x00,
                        _ctypes_configuration=(
                         ("hWnd",      (ctypes.c_voidp, None)),
                         ("lpText",    (ctypes.POINTER(ctypes.c_wchar), True)),
@@ -212,28 +211,52 @@ def debug_fn(fn, *args, **kwargs):
     print(f"\tget_last_error: {gle()}\n")
     return res
 
+def get_std_handle(std_handle, _ctypes_configuration=(
+                   ("nStdHandle", (ctypes.c_ulong, True)),
+                  )):
+    get_std_handle = import_winapi_function(
+        ctypes.windll.kernel32,
+        "GetStdHandle",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_voidp
+    )
+    return get_std_handle(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or std_handle
+    )
+def write_console(handle, data, _ctypes_configuration=(
+                  ("hConsoleOutput", (ctypes.c_voidp, True)),
+                  ("lpBuffer", (ctypes.c_voidp, True)),
+                  ("nNumberOfCharsToWrite", (ctypes.c_ulong, lambda data: len(data.value))),
+                  ("lpNumberOfCharsWritten", (ctypes.POINTER(ctypes.c_ulong), lambda: ctypes.pointer(ctypes.c_ulong()))),
+                  ("lpReserved", (ctypes.c_voidp, None))
+                 )):
+    write_console = import_winapi_function(
+        ctypes.windll.kernel32,
+        "WriteConsole",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_ushort
+    )
+    return write_console(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or handle,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or data,
+        _ctypes_configuration[2][1][1](data),
+        _ctypes_configuration[3][1][1](),
+        _ctypes_configuration[4][1][1]
+    )
+def set_console_title(name, _ctypes_configuration=(
+                      ("lpConsoleTitle", (ctypes.POINTER(ctypes.c_wchar), True)),
+                     )):
+    set_console_title = import_winapi_function(
+        ctypes.windll.kernel32,
+        "SetConsoleTitle",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_ushort
+    )
+    return set_console_title(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or name
+    )
 
 if __name__ == "__main__":
-    clicked = debug_fn(display_messagebox,
-                       create_string("hello"),
-                       create_string("from the other side"),
-                       MESSAGEBOX_INPUTS["MB_ABORTRETRYIGNORE"])
-
-    if debug_fn(open_clipboard, None):
-        print("Successfully opened a clipboard handle.")
-
-    if debug_fn(set_physical_cursor_pos, 69, 69):
-        print("Successfully set the cursor position to (69, 69)")
-
-    point = ctypes.pointer(POINT())
-    if debug_fn(get_physical_cursor_pos, point):
-        print(f"Successfully stored cursor position point.x={point.contents.x} point.y={point.contents.y}")
-
-    data_handle = debug_fn(get_clipboard_data, 0x01)  # CF_TEXT
-    print(f"Clipboard (ANSI/ASCII) contents: {repr(ctypes.string_at(data_handle).decode())}")
-
-    if debug_fn(close_clipboard):
-        print("Successfully closed the clipboard.")
- 
-    print("complete.")
-                 
+    stdout = debug_fn(get_std_handle, 2**32 - 11)
+    debug_fn(set_console_title, "skid_program_v2")
+    debug_fn(write_console, stdout, create_string("hello skid !"))
