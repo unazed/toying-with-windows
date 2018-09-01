@@ -5,6 +5,7 @@ A simple implementation and abstraction onto the Windows API for functions varyi
 - MessageBox{A/W} a.b.:\* `messagebox(caption, body, type_input=0x00)`
 - GetClipboardData a.b.: `get_clipboard_data(format_)`
 - OpenClipboard a.b.: `open_clipboard(new_window_owner)`
+- CloseClipboard a.b.: `close_clipboard()`
 - GetLastError a.b.: `get_last_error()`
 - SetLastError a.b.: `set_last_error(error_code)`
 - SetPhysicalCursorPos a.b.: `set_physical_cursor_pos(x, y)`
