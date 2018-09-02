@@ -13,6 +13,10 @@ A simple implementation and abstraction onto the Windows API for functions varyi
 - GetStdHandle a.b.: `get_std_handle(std_handle)`
 - WriteConsole{A/W} a.b.: `write_console(handle, data)`
 - SetConsoleTitle a.b.: `set_console_title(name)`
+- ReadConsole a.b.: `read_console(handle, data_pointer, read_count)`
+- GetSystemMetrics a.b.: `get_system_metrics(idx)`
+- GetComputerName a.b.: `get_computer_name(data_pointer)`
+- GetComputerNameEx a.b.: `get_computer_name_ex(name_type, data_pointer)`
 
 \* => 'aliased by'
 
