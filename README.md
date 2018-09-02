@@ -22,7 +22,7 @@ A simple implementation and abstraction onto the Windows API for functions varyi
 - CreateToolhelp32Snapshot a.b.: `create_toolhelp32_snapshot(flags, pid)`
 - Process32First a.b.: `process32_first(snapshot_handle, process_entry_pointer)`
 - OpenProcess a.b.: `open_process(access, inherit_handle, pid)`
-
+- Process32Next a.b.: `process32_next(snapshot_handle, process_entry_pointer)`
 \* => 'aliased by'
 
 \*\* => `point` is a `ctypes.pointer` to an instantiated `POINT` structure (defined in the file)
