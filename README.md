@@ -17,10 +17,13 @@ A simple implementation and abstraction onto the Windows API for functions varyi
 - GetSystemMetrics a.b.: `get_system_metrics(idx)`
 - GetComputerName a.b.: `get_computer_name(data_pointer)`
 - GetComputerNameEx a.b.: `get_computer_name_ex(name_type, data_pointer)`
-
+- GetProcAddress a.b.: `get_proc_address(module_handle, fn_name)`
+- GetModuleHandle{A/W} a.b.: `get_proc_address_ascii(module_name)` and `get_proc_address_unicode(module_name)` \*\*\*
 \* => 'aliased by'
 
 \*\* => `point` is a `ctypes.pointer` to an instantiated `POINT` structure (defined in the file)
+
+\*\*\* => due to technical issues, these functions are separate as the ASCII version of the function is implemented primitively in the `function_cache` and therefore the code-implementation of `get_proc_address_ascii` involves simply querying the cache, however the Unicode version requires a completely disjoint and generic implementation of the function as is with other non-primitive functions; the Unicode version is also an instance of the WinAPIFunction class under `function_cache['kernel32.GetProcAddressW']`.
 
 The general format of the functions only specifies a `_ctypes_configuration` customization parameter which allows for run-time customization of compile-time set variables, for instance in the `messagebox` function; for further simplicity the `hWnd` parameter is not specified by the caller; it is within the pseudo-dictionary `_ctypes_configuration`. A call-parameter is defined as the following format: `(<param-name>, (<ctypes-type>, <true-if-python-passed-param-else-this-is-used>))`.
 There are five primary helper functions used within the implementation of such WinAPI functions, namely: `import_winapi_function`, `create_string`, `argtypes_from_ctypes_configuration`, `ctypes_configuration_param_select` and `debug_fn`. `import_winapi_function` is defined as: `import_winapi_function(namespace, name, argtypes, restype, is_unicode=UNICODE)`, namespace refers to the certain library under which the function should be looked for, name is the function name under that namespace, argtypes is an iterable which contains an ordered list of argument types correspondent to the WinAPI definition, restype is also the corresponding return type; essentially, the importer firstly looks for W\[idechar\] or A\[SCII\] types of functions depending on `is_unicode`-- afterwards, if the function does not exist with an A/W type then the generic unbiased function name is retrieved at the expense of a try/except clause. These function names are cached in a dictionary for quicker, later retrieval.
