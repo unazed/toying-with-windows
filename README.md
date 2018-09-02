@@ -23,6 +23,10 @@ A simple implementation and abstraction onto the Windows API for functions varyi
 - Process32First a.b.: `process32_first(snapshot_handle, process_entry_pointer)`
 - OpenProcess a.b.: `open_process(access, inherit_handle, pid)`
 - Process32Next a.b.: `process32_next(snapshot_handle, process_entry_pointer)`
+- CreateFile{A/W} a.b.: `create_file(filename, desired_access, share_mode, sec_attrs, creation_disposition, flags_attrs, template_file)`
+- ReadFile{A/W} a.b.: `read_file(file_handle, data_pointer, read_count, overlap)`
+- CloseHandle a.b.: `close_handle(handle)`
+
 \* => 'aliased by'
 
 \*\* => `point` is a `ctypes.pointer` to an instantiated `POINT` structure (defined in the file)
