@@ -203,6 +203,44 @@ class WinAPIFunction(object):
     def __call__(self, *args):
         return ctypes.WINFUNCTYPE(self.restype, *self.argtypes)(self.handle)(*args)
 
+class _OVERLAPPED_DUMMYSTRUCTNAME(ctypes.Structure):
+    _fields_ = [
+            ("Offset",     ctypes.c_ulong),
+            ("OffsetHigh", ctypes.c_ulong)
+            ]
+
+class _OVERLAPPED_DUMMYUNIONNAME(ctypes.Union):
+    _fields_ = [
+            ("DUMMYSTRUCTNAME", _OVERLAPPED_DUMMYSTRUCTNAME),
+            ("Pointer",         ctypes.c_voidp)
+            ]
+
+class OVERLAPPED(ctypes.Structure):
+    _fields_ = [
+            ("Internal", ctypes.POINTER(ctypes.c_uint64)),
+            ("InternalHigh", ctypes.POINTER(ctypes.c_uint64)),
+            ("DUMMYUNIONNAME", _OVERLAPPED_DUMMYUNIONNAME),
+            ("hEvent", ctypes.c_voidp)
+            ]
+
+class SECURITY_DESCRIPTOR(ctypes.Structure):
+    _fields_ = [
+            ("Revision", ctypes.c_byte),
+            ("Sbz1",     ctypes.c_byte),
+            ("Control",  ctypes.c_ushort),
+            ("Owner",    ctypes.c_voidp),
+            ("Group",    ctypes.c_voidp),
+            ("Sacl",     ctypes.c_voidp),
+            ("Dacl",     ctypes.c_voidp)
+            ]
+
+class SECURITY_ATTRIBUTES(ctypes.Structure):
+    _fields_ = [
+            ("nLength", ctypes.c_ulong),
+            ("lpSecurityDescriptor", ctypes.POINTER(SECURITY_DESCRIPTOR)),
+            ("bInheritHandle", ctypes.c_int)
+            ]
+
 class POINT(ctypes.Structure):
     _fields_ = [
             ("x", ctypes.c_long),
@@ -585,11 +623,75 @@ def process32_next(snapshot_handle, process_entry_pointer, _ctypes_configuration
         ctypes_configuration_param_select(_ctypes_configuration, 1) or process_entry_pointer
     )
 
+def close_handle(handle, _ctypes_configuration=(
+                 ("hObject", (ctypes.c_voidp, True)),
+                )):
+    close_handle = import_winapi_function(
+        "kernel32",
+        "CloseHandle",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return close_handle(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or handle
+    )
+
+def create_file(filename, desired_access, share_mode, sec_attrs, creation_disposition, flags_attrs, template_file, _ctypes_configuration=(
+                ("lpFileName", (ctypes.POINTER(ctypes.c_wchar), True)),
+                ("dwDesiredAccess", (ctypes.c_ulong, True)),
+                ("dwShareMode", (ctypes.c_ulong, True)),
+                ("lpSecurityAttributes", (ctypes.POINTER(SECURITY_ATTRIBUTES), True)),
+                ("dwCreationDisposition", (ctypes.c_ulong, True)),
+                ("dwFlagsAndAttributes", (ctypes.c_ulong, True)),
+                ("hTemplateFile", (ctypes.c_voidp, True))
+               )):
+    create_file = import_winapi_function(
+        "kernel32",
+        "CreateFile",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_voidp
+    )
+    return create_file(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or filename,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or desired_access,
+        ctypes_configuration_param_select(_ctypes_configuration, 2) or share_mode,
+        ctypes_configuration_param_select(_ctypes_configuration, 3) or sec_attrs,
+        ctypes_configuration_param_select(_ctypes_configuration, 4) or creation_disposition,
+        ctypes_configuration_param_select(_ctypes_configuration, 5) or flags_attrs,
+        ctypes_configuration_param_select(_ctypes_configuration, 6) or template_file
+    )
+
+def read_file(file_handle, data_pointer, read_count, overlap, _ctypes_configuration=(
+              ("hFile", (ctypes.c_voidp, True)),
+              ("lpBuffer", (ctypes.c_voidp, True)),
+              ("nNumberOfBytesToRead", (ctypes.c_ulong, True)),
+              ("lpNumberOfBytesRead", (ctypes.POINTER(ctypes.c_ulong), lambda: ctypes.pointer(ctypes.c_ulong()))),
+              ("lpOverlapped", (ctypes.POINTER(OVERLAPPED), True))
+             )):
+    read_file = import_winapi_function(
+        "kernel32",
+        "ReadFile",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return read_file(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or file_handle,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or data_pointer,
+        ctypes_configuration_param_select(_ctypes_configuration, 2) or read_count,
+        _ctypes_configuration[3][1][1](),
+        ctypes_configuration_param_select(_ctypes_configuration, 4) or overlap
+    )
+
 if __name__ == "__main__":
-    snapshot = create_toolhelp32_snapshot(0x2, 0)
-    pe = PROCESSENTRY32()
-    pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
-    res = process32_first(snapshot, ctypes.byref(pe))
-    while res:
-        print(pe.szExeFile)
-        res = process32_next(snapshot, ctypes.byref(pe))    
+    file_handle = debug_fn(create_file,
+            create_string("my_test_file.skid"),
+            0x80000000 | 0x40000000,
+            0x00000002 | 0x00000001,
+            None,
+            0x00000003,
+            0x00000080,
+            None
+    )
+    data = ctypes.create_string_buffer(256)
+    debug_fn(read_file, file_handle, ctypes.byref(data), 255, None)
+    close_handle(file_handle)
