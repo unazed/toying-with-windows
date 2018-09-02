@@ -214,13 +214,13 @@ class PROCESSENTRY32(ctypes.Structure):
             ("dwSize",              ctypes.c_ulong),
             ("cntUsage",            ctypes.c_ulong),
             ("th32ProcessID",       ctypes.c_ulong),
-            ("th32DefaultHeapID",   ctypes.POINTER(ctypes.c_ulong)),
+            ("th32DefaultHeapID",   ctypes.POINTER(ctypes.c_uint64)),
             ("th32ModuleID",        ctypes.c_ulong),
             ("cntThreads",          ctypes.c_ulong),
             ("th32ParentProcessID", ctypes.c_ulong),
             ("pcPriClassBase",      ctypes.c_long),
             ("dwFlags",             ctypes.c_ulong),
-            ("szExeFile",           ctypes.c_char*MAX_PATH)
+            ("szExeFile",           ctypes.c_wchar*MAX_PATH)
             ]
 
 def import_winapi_function(namespace, name, argtypes, restype, is_unicode=UNICODE):
@@ -520,7 +520,6 @@ def create_toolhelp32_snapshot(flags, pid, _ctypes_configuration=(
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_voidp
     )
-    print(create_toolhelp32_snapshot)
     return create_toolhelp32_snapshot(
         ctypes_configuration_param_select(_ctypes_configuration, 0) or flags,
         ctypes_configuration_param_select(_ctypes_configuration, 1) or pid
@@ -569,7 +568,28 @@ def get_proc_address(module_handle, fn_name, _ctypes_configuration=(
         ctypes_configuration_param_select(_ctypes_configuration, 0) or module_handle,
         ctypes_configuration_param_select(_ctypes_configuration, 1) or fn_name
     )
+    lppe = ctypes.pointer(pe)
+
+def process32_next(snapshot_handle, process_entry_pointer, _ctypes_configuration=(
+                   ("hSnapshot", (ctypes.c_voidp, True)),
+                   ("lppe", (ctypes.POINTER(PROCESSENTRY32), True))
+                  )):
+    process32_next = import_winapi_function(
+        "kernel32",
+        "Process32Next",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return process32_next(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or snapshot_handle,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or process_entry_pointer
+    )
 
 if __name__ == "__main__":
-    messagebox(create_string("hey"), create_string("there"))
-
+    snapshot = create_toolhelp32_snapshot(0x2, 0)
+    pe = PROCESSENTRY32()
+    pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+    res = process32_first(snapshot, ctypes.byref(pe))
+    while res:
+        print(pe.szExeFile)
+        res = process32_next(snapshot, ctypes.byref(pe))    
