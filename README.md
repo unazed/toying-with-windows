@@ -19,6 +19,10 @@ A simple implementation and abstraction onto the Windows API for functions varyi
 - GetComputerNameEx a.b.: `get_computer_name_ex(name_type, data_pointer)`
 - GetProcAddress a.b.: `get_proc_address(module_handle, fn_name)`
 - GetModuleHandle{A/W} a.b.: `get_proc_address_ascii(module_name)` and `get_proc_address_unicode(module_name)` \*\*\*
+- CreateToolhelp32Snapshot a.b.: `create_toolhelp32_snapshot(flags, pid)`
+- Process32First a.b.: `process32_first(snapshot_handle, process_entry_pointer)`
+- OpenProcess a.b.: `open_process(access, inherit_handle, pid)`
+
 \* => 'aliased by'
 
 \*\* => `point` is a `ctypes.pointer` to an instantiated `POINT` structure (defined in the file)
