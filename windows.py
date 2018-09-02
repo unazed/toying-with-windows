@@ -161,28 +161,97 @@ COMPUTER_NAME_FORMAT = {v: k for k, v in enumerate([
 
 UNICODE = True
 TCHAR = ctypes.c_wchar if UNICODE else ctypes.c_char
-function_cache = {}
+MAX_PATH = 260
+function_cache = {
+        "kernel32.GetProcAddress": ctypes.windll.kernel32.GetProcAddress,
+        "kernel32.SetLastError": ctypes.windll.kernel32.SetLastError,
+        "kernel32.GetModuleHandleA": ctypes.windll.kernel32.GetModuleHandleA,
+        "kernel32.GetLastError": ctypes.windll.kernel32.GetLastError
+        }  # primitive definitions, not WinAPIFunction instances
+
+function_cache['kernel32.GetProcAddress'].argtypes = (
+    ctypes.c_voidp,
+    ctypes.POINTER(ctypes.c_char)
+)
+function_cache['kernel32.GetProcAddress'].restype = ctypes.c_voidp
+
+function_cache['kernel32.SetLastError'].argtypes = (
+    ctypes.c_ulong,
+)
+function_cache['kernel32.SetLastError'].restype = None
+
+function_cache['kernel32.GetModuleHandleA'].argtypes = (
+    ctypes.POINTER(ctypes.c_char),
+)
+function_cache['kernel32.GetModuleHandleA'].restype = ctypes.c_voidp
+
+function_cache['kernel32.GetLastError'].argtypes = ()
+function_cache['kernel32.GetLastError'].restype = ctypes.c_ulong
+
 len_pointer = lambda data, ctype: ctypes.pointer(ctype(len(data)))
+
+class WinAPIFunction(object):
+    def __init__(self, module, name, handle, restype, argtypes):
+        self.module = module
+        self.name = name
+        self.handle = handle
+        self.argtypes = argtypes
+        self.restype = restype 
+    def __repr__(self):
+        return f"<{self.module}.{self.name} @ {hex(self.handle)}>"
+    __str__ = __repr__
+    def __call__(self, *args):
+        return ctypes.WINFUNCTYPE(self.restype, *self.argtypes)(self.handle)(*args)
 
 class POINT(ctypes.Structure):
     _fields_ = [
             ("x", ctypes.c_long),
             ("y", ctypes.c_long)
             ]
+
+class PROCESSENTRY32(ctypes.Structure):
+    _fields_ = [
+            ("dwSize",              ctypes.c_ulong),
+            ("cntUsage",            ctypes.c_ulong),
+            ("th32ProcessID",       ctypes.c_ulong),
+            ("th32DefaultHeapID",   ctypes.POINTER(ctypes.c_ulong)),
+            ("th32ModuleID",        ctypes.c_ulong),
+            ("cntThreads",          ctypes.c_ulong),
+            ("th32ParentProcessID", ctypes.c_ulong),
+            ("pcPriClassBase",      ctypes.c_long),
+            ("dwFlags",             ctypes.c_ulong),
+            ("szExeFile",           ctypes.c_char*MAX_PATH)
+            ]
+
 def import_winapi_function(namespace, name, argtypes, restype, is_unicode=UNICODE):
+    gle = function_cache['kernel32.GetLastError']
+    sle = function_cache['kernel32.SetLastError']
+    gpa = function_cache['kernel32.GetProcAddress']
+    gmh = function_cache['kernel32.GetModuleHandleA']
+
     name += "W" if is_unicode else "A"
-    qual_fn_name = f"{namespace._name}.{name}"
+    qual_fn_name = f"{namespace}.{name}"
     if qual_fn_name in function_cache:
         return function_cache[qual_fn_name]
-    try:
-        fn = getattr(namespace, name)
-    except AttributeError:
-        qual_fn_name = qual_fn_name[:-1]
-        fn = getattr(namespace, name[:-1])  # non-ansi/unicode fn.
-    fn.argtypes = argtypes
-    fn.restype = restype
-    function_cache[qual_fn_name] = fn
-    return fn
+    namespace_handle = gmh(create_string(namespace, False))
+    if gle() == 127:
+        sle(0)
+        raise LookupError(f"Module: {namespace} doesn't exist.")
+    function_handle = gpa(namespace_handle, create_string(name, False))
+    if gle() != 127:
+        function_cache[qual_fn_name] = WinAPIFunction(namespace, name, function_handle, restype, argtypes)
+        return function_cache[qual_fn_name]
+    sle(0) 
+    name = name[:-1]
+    qual_fn_name = qual_fn_name[:-1]
+    if qual_fn_name in function_cache:
+        return function_cache[qual_fn_name]
+    function_handle = gpa(namespace_handle, create_string(name, False))
+    if gle() == 127:
+        sle(0)
+        raise LookupError(f"Function: {namespace}.{name} doesn't exist.")
+    function_cache[qual_fn_name] = WinAPIFunction(namespace, name, function_handle, restype, argtypes)
+    return function_cache[qual_fn_name]
 
 def create_string(string, unicode=UNICODE):
     if not unicode:
@@ -216,7 +285,7 @@ def messagebox(caption, body, type_input=0x00,
                         ("uType",     (ctypes.c_uint, True))
                        )):
     message_box = import_winapi_function(
-        ctypes.windll.user32,
+        "user32",
         "MessageBox",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_int
@@ -224,13 +293,14 @@ def messagebox(caption, body, type_input=0x00,
     return message_box(_ctypes_configuration[0][1][1],  # hWnd
         ctypes_configuration_param_select(_ctypes_configuration, 1) or body,
         ctypes_configuration_param_select(_ctypes_configuration, 2) or caption,
-        ctypes_configuration_param_select(_ctypes_configuration, 3) or type_input)
+        ctypes_configuration_param_select(_ctypes_configuration, 3) or type_input
+    )
 
 def get_clipboard_data(format_, _ctypes_configuration=(
                        ("uFormat", (ctypes.c_uint, True)), 
                       )):
     get_clipboard_data = import_winapi_function(
-        ctypes.windll.user32,
+        "user32",
         "GetClipboardData",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_voidp
@@ -243,7 +313,7 @@ def open_clipboard(new_window_owner, _ctypes_configuration=(
                    ("hWndNewOwner", (ctypes.c_voidp, True)),
                   )):
     open_clipboard = import_winapi_function(
-        ctypes.windll.user32,
+        "user32",
         "OpenClipboard",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_ushort
@@ -253,24 +323,12 @@ def open_clipboard(new_window_owner, _ctypes_configuration=(
     )
 
 def get_last_error(_ctypes_configuration=()):
-    get_last_error = import_winapi_function(
-        ctypes.windll.kernel32,
-        "GetLastError",
-        argtypes_from_ctypes_configuration(_ctypes_configuration),
-        ctypes.c_ulong
-    )
-    return get_last_error()
+    return function_cache['kernel32.GetLastError']()
 
 def set_last_error(error_code, _ctypes_configuration=(
                    ("dwErrorCode", (ctypes.c_ulong, True)),
                   )):
-    set_last_error = import_winapi_function(
-        ctypes.windll.kernel32,
-        "SetLastError",
-        argtypes_from_ctypes_configuration(_ctypes_configuration),
-        None
-    )
-    return set_last_error(
+    return function_cache['kernel32.SetLastError'](
         ctypes_configuration_param_select(_ctypes_configuration, 0) or error_code
     )
 
@@ -279,7 +337,7 @@ def set_physical_cursor_pos(x, y, _ctypes_configuration=(
                             ("Y", (ctypes.c_int, True))
                            )):
     set_physical_cursor_pos = import_winapi_function(
-        ctypes.windll.user32,
+        "user32",
         "SetPhysicalCursorPos",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_ushort
@@ -291,7 +349,7 @@ def set_physical_cursor_pos(x, y, _ctypes_configuration=(
 
 def close_clipboard(_ctypes_configuration=()):
     close_clipboard = import_winapi_function(
-        ctypes.windll.user32,
+        "user32",
         "CloseClipboard",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_ushort
@@ -302,7 +360,7 @@ def get_physical_cursor_pos(point, _ctypes_configuration=(
                             ("lpPoint", (ctypes.POINTER(POINT), True)), 
                            )):
     get_physical_cursor_pos = import_winapi_function(
-        ctypes.windll.user32,
+        "user32",
         "GetPhysicalCursorPos",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_ushort
@@ -324,7 +382,7 @@ def get_std_handle(std_handle, _ctypes_configuration=(
                    ("nStdHandle", (ctypes.c_ulong, True)),
                   )):
     get_std_handle = import_winapi_function(
-        ctypes.windll.kernel32,
+        "kernel32",
         "GetStdHandle",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_voidp
@@ -341,7 +399,7 @@ def write_console(handle, data, _ctypes_configuration=(
                   ("lpReserved", (ctypes.c_voidp, None))
                  )):
     write_console = import_winapi_function(
-        ctypes.windll.kernel32,
+        "kernel32",
         "WriteConsole",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_ushort
@@ -358,7 +416,7 @@ def set_console_title(name, _ctypes_configuration=(
                       ("lpConsoleTitle", (ctypes.POINTER(ctypes.c_wchar), True)),
                      )):
     set_console_title = import_winapi_function(
-        ctypes.windll.kernel32,
+        "kernel32",
         "SetConsoleTitle",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_ushort
@@ -375,7 +433,7 @@ def read_console(handle, data_pointer, read_count, _ctypes_configuration=(
                  ("pInputControl", (ctypes.c_voidp, None))
                 )):
     read_console = import_winapi_function(
-        ctypes.windll.kernel32,
+        "kernel32",
         "ReadConsole",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_ushort
@@ -392,7 +450,7 @@ def get_system_metrics(idx, _ctypes_configuration=(
                        ("nIndex", (ctypes.c_int, True)),
                       )):
     get_system_metrics = import_winapi_function(
-        ctypes.windll.user32,
+        "user32",
         "GetSystemMetrics",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_int
@@ -401,17 +459,17 @@ def get_system_metrics(idx, _ctypes_configuration=(
         ctypes_configuration_param_select(_ctypes_configuration, 0) or idx
     )
 
-def get_computer_name(data, _ctypes_configuration=(
+def get_computer_name(data_pointer, _ctypes_configuration=(
                       ("lpBuffer", (ctypes.POINTER(TCHAR), True)),
                       ("nSize", (ctypes.POINTER(ctypes.c_ulong), lambda d: len_pointer(d, ctypes.c_ulong)))
                      )):
     get_computer_name = import_winapi_function(
-        ctypes.windll.kernel32,
+        "kernel32",
         "GetComputerName",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_ushort
     )
-    d = ctypes_configuration_param_select(_ctypes_configuration, 0) or data
+    d = ctypes_configuration_param_select(_ctypes_configuration, 0) or data_pointer
     # prevent repetition
     return get_computer_name(
         d,
@@ -424,7 +482,7 @@ def get_computer_name_ex(name_type, data_pointer, _ctypes_configuration=(
                          ("lpnSize", (ctypes.POINTER(ctypes.c_ushort), lambda d: len_pointer(d, ctypes.c_ushort)))
                         )):
     get_computer_name_ex = import_winapi_function(
-        ctypes.windll.kernel32,
+        "kernel32",
         "GetComputerNameEx",
         argtypes_from_ctypes_configuration(_ctypes_configuration),
         ctypes.c_int
@@ -435,6 +493,83 @@ def get_computer_name_ex(name_type, data_pointer, _ctypes_configuration=(
         _ctypes_configuration[2][1][1](data_pointer)
     )
 
+def open_process(access, inherit_handle, pid, _ctypes_configuration=(
+                 ("dwDesiredAccess", (ctypes.c_ulong, True)),
+                 ("bInheritHandle", (ctypes.c_int, True)),
+                 ("dwProcessId", (ctypes.c_ulong, True))
+                )):
+    open_process = import_winapi_function(
+        "kernel32",
+        "OpenProcess",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_voidp
+    )
+    return open_process(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or access,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or inherit_handle,
+        ctypes_configuration_param_select(_ctypes_configuration, 2) or pid
+    )
+
+def create_toolhelp32_snapshot(flags, pid, _ctypes_configuration=(
+                               ("dwflags", (ctypes.c_ulong, True)),
+                               ("th32ProcessID", (ctypes.c_ulong, True))
+                              )):
+    create_toolhelp32_snapshot = import_winapi_function(
+        "kernel32",
+        "CreateToolhelp32Snapshot",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_voidp
+    )
+    print(create_toolhelp32_snapshot)
+    return create_toolhelp32_snapshot(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or flags,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or pid
+    )
+
+def process32_first(snapshot_handle, process_entry_pointer, _ctypes_configuration=(
+                    ("hSnapshot", (ctypes.c_voidp, True)),
+                    ("lppe", (ctypes.POINTER(PROCESSENTRY32), True))
+                   )):
+    process32_first = import_winapi_function(
+        "kernel32",
+        "Process32First",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return process32_first(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or snapshot_handle,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or process_entry_pointer
+    )
+
+def get_module_handle_ascii(module_name, _ctypes_configuration=(
+                      ("lpModuleName", (ctypes.POINTER(ctypes.c_char), True)),
+                     )):
+    return function_cache['kernel32.GetModuleHandleA'](
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or module_name
+    )
+
+def get_module_handle_unicode(module_name, _ctypes_configuration=(
+                              ("lpModuleName", (ctypes.POINTER(ctypes.c_wchar), True)),
+                             )):
+    get_module_handle = import_winapi_function(
+        "kernel32",
+        "GetModuleHandleW",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_voidp
+    )
+    return get_module_handle(
+        _ctypes_configuration_param_select(_ctypes_configuration, 0) or module_name
+    )
+
+def get_proc_address(module_handle, fn_name, _ctypes_configuration=(
+                     ("hModule", (ctypes.c_voidp, True)),
+                     ("lpProcName", (ctypes.POINTER(ctypes.c_char), True))
+                    )):
+    return function_cache['kernel32.GetProcAddress'](
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or module_handle,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or fn_name
+    )
 
 if __name__ == "__main__":
-    pass  # all functions work!
+    messagebox(create_string("hey"), create_string("there"))
+
