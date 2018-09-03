@@ -159,9 +159,12 @@ COMPUTER_NAME_FORMAT = {v: k for k, v in enumerate([
     "ComputerNameMax"  # unused
     ])}
 
-UNICODE = True
-TCHAR = ctypes.c_wchar if UNICODE else ctypes.c_char
-MAX_PATH = 260
+UNICODE            = True
+TCHAR              = ctypes.c_wchar if UNICODE else ctypes.c_char
+MAX_PATH           = 260
+WSADESCRIPTION_LEN = 256
+WSASYS_STATUS_LEN  = 128
+
 function_cache = {
         "kernel32.GetProcAddress": ctypes.windll.kernel32.GetProcAddress,
         "kernel32.SetLastError": ctypes.windll.kernel32.SetLastError,
@@ -202,6 +205,37 @@ class WinAPIFunction(object):
     __str__ = __repr__
     def __call__(self, *args):
         return ctypes.WINFUNCTYPE(self.restype, *self.argtypes)(self.handle)(*args)
+
+class SockAddr(ctypes.Structure):
+    _fields_ = [
+            ("sa_family", ctypes.c_ushort),
+            ("sa_data", ctypes.c_char*14)
+            ]
+
+class AddrInfo(ctypes.Structure):
+    pass
+
+AddrInfo._fields_ = [
+        ("ai_flags", ctypes.c_int),
+        ("ai_family", ctypes.c_int),
+        ("ai_socktype", ctypes.c_int),
+        ("ai_protocol", ctypes.c_int),
+        ("ai_addrlen", ctypes.c_size_t),
+        ("ai_canonname", ctypes.POINTER(ctypes.c_char)),
+        ("ai_addr", ctypes.POINTER(SockAddr)),
+        ("ai_next", ctypes.POINTER(AddrInfo))
+        ]
+
+class WSAData(ctypes.Structure):
+    _fields_ = [
+            ("wVersion", ctypes.c_ushort),
+            ("wHighVersion", ctypes.c_ushort),
+            ("iMaxSockets", ctypes.c_ushort),
+            ("iMaxUdpDg", ctypes.c_ushort),
+            ("lpVendorInfo", ctypes.POINTER(ctypes.c_char)),
+            ("szDescription", ctypes.c_char*(WSADESCRIPTION_LEN+1)),
+            ("szSystemStatus", ctypes.c_char*(WSASYS_STATUS_LEN+1))
+            ]
 
 class _OVERLAPPED_DUMMYSTRUCTNAME(ctypes.Structure):
     _fields_ = [
@@ -428,7 +462,7 @@ def get_std_handle(std_handle, _ctypes_configuration=(
     return get_std_handle(
         ctypes_configuration_param_select(_ctypes_configuration, 0) or std_handle
     )
-
+    
 def write_console(handle, data, _ctypes_configuration=(
                   ("hConsoleOutput", (ctypes.c_voidp, True)),
                   ("lpBuffer", (ctypes.c_voidp, True)),
@@ -682,16 +716,142 @@ def read_file(file_handle, data_pointer, read_count, overlap, _ctypes_configurat
         ctypes_configuration_param_select(_ctypes_configuration, 4) or overlap
     )
 
-if __name__ == "__main__":
-    file_handle = debug_fn(create_file,
-            create_string("my_test_file.skid"),
-            0x80000000 | 0x40000000,
-            0x00000002 | 0x00000001,
-            None,
-            0x00000003,
-            0x00000080,
-            None
+def socket(af, type_, protocol, _ctypes_configuration=(
+           ("af", (ctypes.c_int, True)),
+           ("type", (ctypes.c_int, True)),
+           ("protocol", (ctypes.c_int, True))
+          )):
+    socket = import_winapi_function(
+        "ws2_32",
+        "socket",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_ulong
     )
-    data = ctypes.create_string_buffer(256)
-    debug_fn(read_file, file_handle, ctypes.byref(data), 255, None)
-    close_handle(file_handle)
+    return socket(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or af,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or type_,
+        ctypes_configuration_param_select(_ctypes_configuration, 2) or protocol
+    )
+
+def closesocket(socket, _ctypes_configuration=(
+                ("s", (ctypes.c_ulong, True)),
+               )):
+    closesocket = import_winapi_function(
+        "ws2_32",
+        "closesocket",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return closesocket(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or socket
+    )
+
+def wsa_startup(version, wsa_data, _ctypes_configuration=(
+                ("wVersionRequired", (ctypes.c_ushort, True)),
+                ("lpWSAData", (ctypes.POINTER(WSAData), True))
+               )):
+    wsa_startup = import_winapi_function(
+        "ws2_32",
+        "WSAStartup",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return wsa_startup(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or version,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or wsa_data
+    )
+
+def wsa_cleanup(_ctypes_configuration=()):
+    wsa_cleanup = import_winapi_function(
+        "ws2_32",
+        "WSACleanup",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return wsa_cleanup()
+
+def wsa_get_last_error(_ctypes_configuration=()):
+    wsa_get_last_error = import_winapi_function(
+        "ws2_32",
+        "WSAGetLastError",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return wsa_get_last_error()
+
+def getaddrinfo(host, service, hints, result, _ctypes_configuration=(
+                ("pNodeName", (ctypes.POINTER(ctypes.c_char), True)),
+                ("pServiceName", (ctypes.POINTER(ctypes.c_char), True)),
+                ("pHints", (ctypes.POINTER(AddrInfo), True)),
+                ("ppResult", (ctypes.POINTER(ctypes.POINTER(AddrInfo)), True))
+               )):
+    getaddrinfo = import_winapi_function(
+        "ws2_32",
+        "getaddrinfo",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    return getaddrinfo(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or host,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or service,
+        ctypes_configuration_param_select(_ctypes_configuration, 2) or hints,
+        ctypes_configuration_param_select(_ctypes_configuration, 3) or result
+    )
+
+def rtl_zero_memory(dest, length, _ctypes_configuration=(
+                    ("Destination", (ctypes.c_voidp, True)),
+                    ("Length", (ctypes.c_voidp, True))
+                   )):
+    rtl_zero_memory = import_winapi_function(
+        "kernel32",
+        "RtlZeroMemory",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        None
+    )
+    return rtl_zero_memory(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or dest,
+        ctypes_configuration_param_select(_ctypes_configuration, 1) or length
+    )
+
+def send(socket, data, flags, _ctypes_configuration=(
+         ("s", (ctypes.c_int, True)),
+         ("buf", (ctypes.POINTER(ctypes.c_char), True)),
+         ("len", (ctypes.c_int, lambda d: len(d))),
+         ("flags", (ctypes.c_int, True))
+        )):
+    send = import_winapi_function(
+        "ws2_32",
+        "send",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        ctypes.c_int
+    )
+    d = ctypes_configuration_param_select(_ctypes_configuration, 1) or data
+    return send(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or socket,
+        d,
+        _ctypes_configuration[2][1][1](d),
+        ctypes_configuration_param_select(_ctypes_configuration, 3) or flags
+    )
+
+if __name__ == "__main__":
+    wsa_data = WSAData()
+    debug_fn(wsa_startup, (2 << 8) | 2, wsa_data)
+    sock = debug_fn(socket, 2, 1, 6)
+
+    hints = AddrInfo()
+    result = ctypes.pointer(AddrInfo())
+    rtl_zero_memory(ctypes.byref(hints), ctypes.sizeof(AddrInfo))
+    hints.ai_family = 2
+    hints.ai_socktype = 1
+    hints.ai_protocol = 6
+
+    getaddrinfo(create_string("google.com", False),
+                create_string("80", False),
+                ctypes.byref(hints),
+                ctypes.byref(result))
+
+    __import__("pdb").set_trace()
+
+    debug_fn(send, sock, create_string("GET / HTTP/1.1\r\n\r\n", False), 0x1)
+    debug_fn(closesocket, sock)
+    debug_fn(wsa_cleanup)
