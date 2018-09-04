@@ -206,34 +206,63 @@ class WinAPIFunction(object):
     def __call__(self, *args):
         return ctypes.WINFUNCTYPE(self.restype, *self.argtypes)(self.handle)(*args)
 
+class _SYSTEM_INFO_UNION_STRUCT(ctypes.Structure):
+    _fields_ = [
+            ("wProcessorArchitecture", ctypes.c_ushort),
+            ("wReserved",              ctypes.c_ushort)
+            ]
+
+class _SYSTEM_INFO_UNION(ctypes.Union):
+    _anonymous_ = ("struct",)
+    _fields_ = [
+            ("dwOemId", ctypes.c_ulong),
+            ("struct",  _SYSTEM_INFO_UNION_STRUCT)
+            ]
+
+class SYSTEM_INFO(ctypes.Structure):
+    _anonymous_ = ("union",)
+    _fields_ = [
+                ("union",                       _SYSTEM_INFO_UNION),
+                ("dwPageSize",                  ctypes.c_ulong),
+                ("lpMinimumApplicationAddress", ctypes.c_voidp),
+                ("lpMaximumApplicationAddress", ctypes.c_voidp),
+                ("dwActiveProcessorMask",       ctypes.POINTER(ctypes.c_ulong)),
+                ("dwNumberOfProcessors",        ctypes.c_ulong),
+                ("dwProcessorType",             ctypes.c_ulong),
+                ("dwAllocationGranularity",     ctypes.c_ulong),
+                ("wProcessorLevel",             ctypes.c_ushort),
+                ("wProcessorRevision",          ctypes.c_ushort)
+
+            ]
+
 class SockAddr(ctypes.Structure):
     _fields_ = [
             ("sa_family", ctypes.c_ushort),
-            ("sa_data", ctypes.c_char*14)
+            ("sa_data",   ctypes.c_char*14)
             ]
 
 class AddrInfo(ctypes.Structure):
     pass
 
 AddrInfo._fields_ = [
-        ("ai_flags", ctypes.c_int),
-        ("ai_family", ctypes.c_int),
-        ("ai_socktype", ctypes.c_int),
-        ("ai_protocol", ctypes.c_int),
-        ("ai_addrlen", ctypes.c_size_t),
+        ("ai_flags",     ctypes.c_int),
+        ("ai_family",    ctypes.c_int),
+        ("ai_socktype",  ctypes.c_int),
+        ("ai_protocol",  ctypes.c_int),
+        ("ai_addrlen",   ctypes.c_size_t),
         ("ai_canonname", ctypes.POINTER(ctypes.c_char)),
-        ("ai_addr", ctypes.POINTER(SockAddr)),
-        ("ai_next", ctypes.POINTER(AddrInfo))
+        ("ai_addr",      ctypes.POINTER(SockAddr)),
+        ("ai_next",      ctypes.POINTER(AddrInfo))
         ]
 
 class WSAData(ctypes.Structure):
     _fields_ = [
-            ("wVersion", ctypes.c_ushort),
-            ("wHighVersion", ctypes.c_ushort),
-            ("iMaxSockets", ctypes.c_ushort),
-            ("iMaxUdpDg", ctypes.c_ushort),
-            ("lpVendorInfo", ctypes.POINTER(ctypes.c_char)),
-            ("szDescription", ctypes.c_char*(WSADESCRIPTION_LEN+1)),
+            ("wVersion",       ctypes.c_ushort),
+            ("wHighVersion",   ctypes.c_ushort),
+            ("iMaxSockets",    ctypes.c_ushort),
+            ("iMaxUdpDg",      ctypes.c_ushort),
+            ("lpVendorInfo",   ctypes.POINTER(ctypes.c_char)),
+            ("szDescription",  ctypes.c_char*(WSADESCRIPTION_LEN+1)),
             ("szSystemStatus", ctypes.c_char*(WSASYS_STATUS_LEN+1))
             ]
 
@@ -251,10 +280,10 @@ class _OVERLAPPED_DUMMYUNIONNAME(ctypes.Union):
 
 class OVERLAPPED(ctypes.Structure):
     _fields_ = [
-            ("Internal", ctypes.POINTER(ctypes.c_uint64)),
-            ("InternalHigh", ctypes.POINTER(ctypes.c_uint64)),
+            ("Internal",       ctypes.POINTER(ctypes.c_uint64)),
+            ("InternalHigh",   ctypes.POINTER(ctypes.c_uint64)),
             ("DUMMYUNIONNAME", _OVERLAPPED_DUMMYUNIONNAME),
-            ("hEvent", ctypes.c_voidp)
+            ("hEvent",         ctypes.c_voidp)
             ]
 
 class SECURITY_DESCRIPTOR(ctypes.Structure):
@@ -270,9 +299,9 @@ class SECURITY_DESCRIPTOR(ctypes.Structure):
 
 class SECURITY_ATTRIBUTES(ctypes.Structure):
     _fields_ = [
-            ("nLength", ctypes.c_ulong),
+            ("nLength",              ctypes.c_ulong),
             ("lpSecurityDescriptor", ctypes.POINTER(SECURITY_DESCRIPTOR)),
-            ("bInheritHandle", ctypes.c_int)
+            ("bInheritHandle",       ctypes.c_int)
             ]
 
 class POINT(ctypes.Structure):
@@ -833,25 +862,19 @@ def send(socket, data, flags, _ctypes_configuration=(
         ctypes_configuration_param_select(_ctypes_configuration, 3) or flags
     )
 
+def get_system_info(system_info, _ctypes_configuration=(
+                    ("lpSystemInfo", (ctypes.POINTER(SYSTEM_INFO), True)),
+                   )):
+    get_system_info = import_winapi_function(
+        "kernel32",
+        "GetSystemInfo",
+        argtypes_from_ctypes_configuration(_ctypes_configuration),
+        None
+    )
+    return get_system_info(
+        ctypes_configuration_param_select(_ctypes_configuration, 0) or system_info
+    )
+
 if __name__ == "__main__":
-    wsa_data = WSAData()
-    debug_fn(wsa_startup, (2 << 8) | 2, wsa_data)
-    sock = debug_fn(socket, 2, 1, 6)
-
-    hints = AddrInfo()
-    result = ctypes.pointer(AddrInfo())
-    rtl_zero_memory(ctypes.byref(hints), ctypes.sizeof(AddrInfo))
-    hints.ai_family = 2
-    hints.ai_socktype = 1
-    hints.ai_protocol = 6
-
-    getaddrinfo(create_string("google.com", False),
-                create_string("80", False),
-                ctypes.byref(hints),
-                ctypes.byref(result))
-
-    __import__("pdb").set_trace()
-
-    debug_fn(send, sock, create_string("GET / HTTP/1.1\r\n\r\n", False), 0x1)
-    debug_fn(closesocket, sock)
-    debug_fn(wsa_cleanup)
+    system_info = SYSTEM_INFO()
+    debug_fn(get_system_info, ctypes.byref(system_info))
